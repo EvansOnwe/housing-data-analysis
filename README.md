@@ -13,13 +13,6 @@ This project involves:
 
 ---
 
----
-
-Let me know if you’d like help customizing:
-- A rendered preview (`README.md` ➝ HTML)
-- Adding images or graphs to the README
-- Generating an R project `.Rproj` file for better RStudio integration
-
 
 ## 🔧 Requirements
 
