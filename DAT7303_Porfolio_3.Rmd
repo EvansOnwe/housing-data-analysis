@@ -1,0 +1,851 @@
+#### Name: Evans Onwe
+
+#### Student number: 2424359 Moodle: Data Mining and machine learning (DAT7303) Institute: University of Greater Manchester
+
+#### call the required libraries
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(caret)
+library(Metrics)
+library(corrplot)
+```
+
+### Set the working directory
+
+```{r}
+setwd("C:/Users/Admin/Desktop/DAT7303/DAT7303_PORTFOLIO_3")
+getwd()
+```
+
+### import the dataset
+
+```{r}
+dataset <- read.csv("Housing Data_Same_Region.csv")
+
+```
+
+### Basic arrangements
+
+```{r}
+#move sales price to the end
+Housing_data <- dataset %>%
+  select(setdiff(names(.), "SALE_PRC"), SALE_PRC)
+
+#remove unwanted columns
+Housing_data <- Housing_data %>%
+  select(-c(LATITUDE, LONGITUDE, PARCELNO))
+
+#remname columns
+colnames(Housing_data) <- c("Land_Square_foot", "Total_living_area","Special_features",
+                            "Rail_distance", "Ocean_distance", "Water_distance",
+                            "Centralbusiness_distance", "Sub_center_distance", 
+                            "Highway_distance", "Age", "Avno60plus", "Structure_Quality",
+                            "Month_Sold", "Price")
+
+#check the correct datatypes
+column_classes <- lapply(Housing_data, class)
+column_classes <- unlist(column_classes)
+column_classes
+
+str(Housing_data)
+
+```
+
+### Check for missing values
+
+```{r}
+any(is.na(Housing_data))
+sum(is.na(Housing_data))
+colSums(is.na(Housing_data))
+
+```
+
+### check for duplicates
+
+```{r}
+sum(duplicated(Housing_data))
+duplicates <- Housing_data[duplicated(Housing_data), ]
+duplicates
+
+```
+
+### EXPLORATORY DATA ANALYSIS (EDA)
+
+### Summary statistics, distributions and relationships between features
+
+```{r}
+library(ggplot2)  #call ggplot for plots and graphs
+
+
+dim(Housing_data) # Dimensions of the dataset
+
+str(Housing_data) # Structure of the dataset
+
+summary(Housing_data) # Summary statistics
+
+#BOXPLOT
+boxplot(Housing_data$Price,
+        main = "Boxplot of Sale price",
+        xlab = "Prices")
+
+# Histogram of Sale Price
+ggplot(Housing_data, aes( x = Price)) +
+  geom_histogram(fill = "orange", bins = 40, color = "#000") +
+  labs(title = "Histogram for Distribution of Sale Price", x = "Sale Price", y = "Count") +
+ theme_minimal()
+
+#Price vs. Total Living Area
+ggplot(Housing_data, aes(x = Total_living_area, y = Price)) +
+  geom_point(alpha = 0.6, color = "orange") +
+  geom_smooth(method = "lm", color = "red") +  
+  labs(title = "Price vs Total Living Area", x = "Total Living Area", y = "Sale Price")
+
+#Price vs. Land Size
+ggplot(Housing_data, aes(x = Land_Square_foot, y = Price)) +
+  geom_point(alpha = 0.6, color = "orange") +
+  labs(title = "Price vs Land Size", x = "Land Size (sq ft)", y = "Sale Price")
+
+
+#Price vs. Ocean Distance
+ggplot(Housing_data, aes(x = log1p(Ocean_distance), y = Price)) +
+  geom_point(alpha = 0.6, color = "orange") +
+  labs(title = "Price vs. Ocean Distance (Log Scale)", x = "Log of Ocean Distance", y = "Sale Price")
+
+
+
+```
+
+#### outliers
+
+```{r}
+
+#Detecting outliers using IQR
+
+data <- Housing_data$Price
+Q1 <- quantile(data, 0.25)
+Q3 <- quantile(data, 0.75)
+IQR_value <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q1 + 1.5 * IQR_value
+outliers <- data[data < lower_bound | data > upper_bound]
+print(outliers)
+
+  
+
+```
+
+## Feature Engineering
+
+#### *Adding new and relevant features to the dataset*
+
+```{r}
+
+Engineered_features <- Housing_data %>%   #add is_new and coastal distance to the dataset
+  mutate(
+         Is_new = ifelse(Age <= 30, 1, 0),
+      
+         Coastal_distance = (
+           Housing_data$Water_distance + Housing_data$Ocean_distance
+         )
+  )
+
+
+#move sale price to the end of the table
+Engineered_features <- Engineered_features %>%
+  select(setdiff(names(.), "Price"), Price)
+         
+print(Engineered_features)
+```
+
+### *Correlation matrix*
+
+```{r}
+
+# Select numeric columns
+numeric_data <- Engineered_features %>%
+  select(where(is.numeric))
+
+# Compute correlation matrix
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+
+cor_matrix
+
+# Visualize correlation heatmap
+
+library(corrplot)
+
+corrplot(cor_matrix, 
+         title = "Correlation Matrix", 
+         mar=c(0,0,1,0),
+         method = "color", 
+         type = "lower", 
+         tl.col = "black", 
+         tl.cex = 0.8, 
+         number.cex = 10)
+
+
+```
+
+### Barplot of Correlated features
+
+```{r}
+#Select only numeric columns
+numeric_data <- Engineered_features %>%
+   select(where(is.numeric))
+
+cor_matrix <- cor(numeric_data, use = "complete.obs")
+
+# Compute correlations with Sale Price
+cor_sale_price <- cor_matrix[, "Price"]
+cor_sale_price
+
+# Sort correlation strength (excluding Sale Price itself)
+top_features <- sort(cor_sale_price, decreasing = TRUE)[-1]
+
+top_features
+
+top_cor_features <- data.frame(
+  Features = names(top_features),
+  Correlation = cor_sale_price[names(top_features)]
+)
+
+top_cor_features
+
+# Bar plot
+ggplot(top_cor_features, aes(x = reorder(Features, Correlation), y = Correlation)) +
+  geom_bar(stat = "identity", fill = "Khaki") +
+  labs(title = "Barplot of correlation with Sale Price",
+       x = "Feature", y = "Correlation with Sale Price") +
+  geom_text(aes(label = round(Correlation, 2)), 
+            hjust = ifelse(top_cor_features$Correlation > 0, -0.1, 1.1), 
+            color = "#000", size = 3.5) +
+theme_minimal() +
+theme(
+  plot.title = element_text(hjust = 0.5, face = "bold"),
+  axis.text.y = element_text(size = 10),
+  axis.text.x = element_text(size = 10)
+) + coord_flip()
+
+colnames(Engineered_features)
+```
+
+### Normalisation
+
+### Applying log transformation
+
+```{r}
+
+#applying log transformation to the data
+transformed_data <- Engineered_features
+
+numeric_cols <- sapply(transformed_data, is.numeric)
+
+# Perform the transformation 
+transformed_data[numeric_cols] <- lapply(transformed_data[numeric_cols], 
+                                         function(x) log1p(x))
+
+sum(is.na((transformed_data))) # check for NA's
+
+plot(density(transformed_data$Price))
+
+
+#Save the transformed dataset
+setwd("C:/Users/Admin/Desktop/DAT7303/DAT7303_PORTFOLIO_3")
+write.csv(transformed_data, "Housing_Data_Log_Transformed.csv")
+getwd()
+
+
+```
+
+# MODELLING
+
+```{r}
+
+#read the transformed dataset
+setwd("C:/Users/Admin/Desktop/DAT7303/DAT7303_PORTFOLIO_3")
+model_data <- read.csv("Housing_Data_Log_Transformed.csv")
+model_data <- model_data[, -1] # drop the first column
+
+
+#model_data
+#setting the seed for reproductivity
+set.seed(123)
+
+#splitting the dataset into training and testing, 80% and 20%
+sampleSize <- floor(0.8 * nrow(model_data))
+sampleSize
+
+trainIndex <- sample(seq_len(nrow(model_data)), size = sampleSize)
+
+trainSet <- model_data[trainIndex, ]  #trainset
+testSet <- model_data[-trainIndex, ]  #testset
+trainSet
+testSet
+```
+
+### LINEAR MODEL
+
+```{r}
+#fitting the model on the training data
+lm_model <- lm(Price ~ Total_living_area + Special_features + Month_Sold + Land_Square_foot
+               + Highway_distance + Age + Water_distance + Centralbusiness_distance +
+                 Ocean_distance + Sub_center_distance,
+               data = trainSet)
+
+# predict the values for the test set
+lm_predictions <- predict(lm_model, testSet) 
+
+original_lm_predictions <- expm1(lm_predictions)  #perform the inverse of logp1
+original_lm_predictions
+
+#evaluation - using matrices package to calculate performance
+predicted_lm <- lm_predictions #predicted value to matrix
+actual_lm <- testSet$Price #actual value to matrix
+
+lm<- rmse(predicted_lm, actual_lm)
+
+lm2 <- postResample(pred = predicted_lm, obs = actual_lm)
+lm2
+```
+
+#### Save Linear regression model
+
+```{r}
+
+saveRDS(lm_model, "lm_model.rds")  #save the model
+
+```
+
+### DECISION TREE MODEL
+
+```{r}
+
+library(rpart)
+
+#fitting the model on the trainset
+
+dt_model <- rpart(Price ~ Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance +
+                    Sub_center_distance,
+               data = trainSet)
+
+#predict the values for the test set
+dt_predictions <- predict(dt_model, newdata = testSet)
+
+original_lm_predictions <- lm_predictions  #perform the inverse of logp1
+original_lm_predictions
+
+#evaluation - using matrices package to calculate performance
+predicted_dt <- dt_predictions #predicted value
+actual_dt <-    testSet$Price #actual value
+dt <- rmse(predicted_dt, actual_dt)
+dt
+dt2 <- postResample(pred = predicted_dt, obs = actual_dt)
+dt2
+```
+
+### SVM MODEL
+
+```{r}
+#install.packages("e1071")
+library(e1071)
+
+#fitting the svm model to the trainset
+svm_linear <- svm(Price ~ Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance +
+                    Sub_center_distance, data = trainSet, kernel = "linear")
+
+
+svm_rbf <- svm(Price ~ Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance +
+                    Sub_center_distance, data = trainSet, kernel = "radial")
+
+svm_poly <- svm(Price ~Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance +
+                    Sub_center_distance, data = trainSet, kernel = "poly")
+
+#predict the values for the test set
+svm_linear_predictions <- predict(svm_linear, testSet)    #svm linear
+original_linear_predictions <- expm1(svm_linear_predictions)
+#original_linear_predictions
+
+svm_rbf_predictions <- predict(svm_rbf, testSet)          #svm rbf
+original_rbf_predictions <- expm1(svm_rbf_predictions)
+#original_rbf_predictions
+
+svm_poly_predictions <- predict(svm_poly, testSet)        #svm poly
+original_poly_predictions <- expm1(svm_poly_predictions)
+#original_poly_predictions
+
+
+
+##evaluation - using matrices package to calculate performance
+
+predicted_linear <- svm_linear_predictions
+actual_linear <- testSet$Price
+svm_linear_rmse <- rmse(predicted_linear, actual_linear)
+svm_linear_rmse2 <- postResample(pred = predicted_linear, obs = actual_linear)
+svm_linear_rmse
+
+predicted_rbf <- svm_rbf_predictions
+actual_rbf <- testSet$Price
+svm_rbf_rmse <- rmse(predicted_rbf, actual_rbf)
+svm_rbf_rmse2 <- postResample(pred = predicted_rbf, obs = actual_rbf)
+svm_rbf_rmse
+
+predicted_poly <- svm_poly_predictions
+actual_poly <- testSet$Price
+svm_poly_rmse <- rmse(predicted_poly, actual_poly)
+svm_poly_rmse2 <- postResample(pred = predicted_poly, obs = actual_poly)
+svm_poly_rmse
+```
+
+### Save SVR models
+
+```{r}
+saveRDS(svm_linear, "svm_linear")
+saveRDS(svm_rbf, "svm_rbf")
+saveRDS(svm_poly, "svm_poly")
+```
+
+### RANDOM FOREST MODEL
+
+```{r}
+library(randomForest)
+#fitting the model on the training data
+rf_model_100<- randomForest(Price ~ Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance +
+                    Sub_center_distance, data = trainSet, ntree = 100)
+
+rf_model_200<- randomForest(Price ~ Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance +
+                    Sub_center_distance, data = trainSet, ntree = 200)
+
+rf_model_500<- randomForest(Price ~ Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance +
+                    Sub_center_distance, data = trainSet, ntree = 500)
+
+#predict the values for the testset
+rf_predictions_100 <- predict(rf_model_100, newdata = testSet)
+rf_predictions_200 <- predict(rf_model_200, newdata = testSet)
+rf_predictions_500 <- predict(rf_model_500, newdata = testSet)
+
+#calculate the error metrics 
+predicted_100 <- rf_predictions_100  #rf model 100
+actual_100 <- testSet$Price
+rf_100 <- rmse(predicted_100, actual_100)
+rf_100_2 <- postResample(pred = predicted_100, obs = actual_100)
+rf_100
+
+predicted_200 <- rf_predictions_200  #rf model 200
+actual_200 <- testSet$Price
+rf_200 <- rmse(predicted_200, actual_200)
+rf_200_2 <- postResample(pred = predicted_200, obs = actual_200)
+rf_200
+
+predicted_500 <- rf_predictions_500  #rf model 500
+actual_500 <- testSet$Price
+rf_500 <- rmse(predicted_500, actual_500)
+rf_500_2 <- postResample(pred = predicted_500, obs = actual_500)
+rf_500
+```
+
+### Save the RF model
+
+```{r}
+saveRDS(rf_model_100, "rf_100.rds")
+saveRDS(rf_model_200, "rf_200.rds")
+saveRDS(rf_model_500, "rf_500.rds")
+```
+
+### GRADIENT BOOST (XGBOOST) MODEL
+
+```{r}
+
+
+library(xgboost)
+library(Matrix)
+library(Metrics)
+
+# Prepare the data
+#create the feature 
+xg_features <- Price ~ Total_living_area + Special_features + Month_Sold +
+                    Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+                    Coastal_distance + Age  + Centralbusiness_distance
+
+#model matrix
+train_matrix <- model.matrix(xg_features, data = trainSet)
+test_matrix <- model.matrix(xg_features, data = testSet)
+
+# Extract target variables
+train_label <- trainSet$Price
+test_label <- testSet$Price
+
+# Create DMatrix objects
+dtrain <- xgb.DMatrix(data = train_matrix, label = train_label)
+dtest <- xgb.DMatrix(data = test_matrix, label = test_label)
+
+# Train the model
+xgb_model <- xgboost(data = dtrain,
+                     nrounds = 100,
+                     verbose = 0
+                     )
+xgb_model
+
+# Predict on test set
+xgb_predictions <- predict(xgb_model, newdata = dtest)
+
+# Evaluate RMSE
+predicted_xgb <- xgb_predictions
+actual_xgb <- testSet$Price
+xgb <- rmse(predicted_xgb, actual_xgb)
+xgb2 <- postResample(pred = predicted_xgb, obs = actual_xgb)
+xgb
+```
+
+#### SAVE THE XGBOOST MODEL
+
+```{r}
+saveRDS(xgb_model, "xgb_model.rds")
+```
+
+### COMPARE MODEL PERFORMANCE AND EVALUATION
+
+### MODEL EVALUATION
+
+```{r}
+library(ggplot2)
+
+model_names = c("lm", "dt", "svm_linear", "svm_rbf", "svm_poly", "rf_100", "rf_200",
+                "rf_500", "xgb")
+
+model_peroformance = c(lm, dt, svm_linear_rmse, svm_rbf_rmse, svm_poly_rmse, rf_100,
+                       rf_200, rf_500, xgb)
+
+model_df <- data.frame(model_names, model_peroformance)
+
+# Sort by RMSE for plotting
+model_df <- model_df[order(model_df$model_peroformance), ]
+model_df$model_names <- factor(model_df$model_names, levels = model_df$model_names)  # Keep sorted order in plot
+
+
+ggplot(model_df, aes(x = model_names, y = model_peroformance)) +
+  geom_bar(stat = "identity", fill = "#808080", color = "black", width = 0.6) +
+  geom_text(aes(label = round(model_peroformance, 4)), 
+            vjust = -0.5,
+            size = 3.5,
+            color = "black") +
+  labs(title = "Model Performance Comparison",
+       x = "Models",
+       y = "Root Mean Squared Error (RMSE)") +
+  theme_minimal(base_size = 14) +
+  theme(axis.text.x = element_text(angle = 40, hjust = 1, color = "black"),
+        plot.background = element_rect(fill = "khaki", color = NA))
+
+
+
+
+library(caret)
+
+model_predictions <- list(
+  lm = lm_predictions,
+  dt = dt_predictions,
+  svm_linear = svm_linear_predictions,
+  svm_rbf = svm_rbf_predictions,
+  svm_poly = svm_poly_predictions,
+  rf_100 = rf_predictions_100,
+  rf_200 = rf_predictions_200,
+  rf_500 = rf_predictions_500,
+  xgb = xgb_predictions
+)
+
+
+result_dataframe <- data.frame(
+  Model = character(),
+  R_squared = numeric(),
+  RMSE = numeric(),
+  MAE = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each model and compute evaluation metrics
+for (model in names(model_predictions)) {
+  metrics <- postResample(pred = model_predictions[[model]], obs = testSet$Price)
+  result_dataframe <- rbind(result_dataframe, data.frame(
+    Model = model,
+    R_squared = metrics[["Rsquared"]],
+    RMSE = metrics[["RMSE"]],
+    MAE = metrics[["MAE"]]
+  ))
+}
+
+result_dataframe
+```
+
+### HYPER PARAMETER TUNING
+
+```{r}
+
+library(caret)
+library(randomForest)
+
+# # Ensure factor variables
+# trainSet$Special_features <- as.factor(trainSet$Special_features)
+# trainSet$Month_Sold <- as.factor(trainSet$Month_Sold)
+
+# Set up training control
+control <- trainControl(method = "cv", number = 5)  # 5-fold cross-validation
+
+# Set up the tuning grid
+tuneGrid <- expand.grid(mtry = c(2, 4, 6, 8, 10))
+
+# Train the model
+set.seed(123)
+rf_tuned <- train(
+  Price ~ Total_living_area + Special_features + Month_Sold +
+            Land_Square_foot + Highway_distance + Is_new + Rail_distance +
+            Coastal_distance + Age + Centralbusiness_distance +
+            Sub_center_distance,
+  data = trainSet,
+  method = "rf",
+  trControl = control,
+  tuneGrid = tuneGrid,
+  ntree = 500
+)
+
+print(rf_tuned)
+plot(rf_tuned)
+
+
+# Predict on test set
+tf_tuned_prediction <- predict(rf_tuned, newdata = testSet)
+
+#predict the values for the testset
+rfTuned_prediction <- predict(rf_tuned, newdata = testSet)
+
+#calculate the error metrics 
+predicted<- rfTuned_prediction
+actual <- testSet$Price
+rfTuned <- rmse(predicted, actual_500)
+rfTuned
+rf_500
+```
+
+### save the tunned rf model
+
+```{r}
+
+saveRDS(rf_tuned, "rf_tuned.rds")
+
+```
+
+### Evaluate the new best model with new data
+
+```{r}
+rfTuned_model <- readRDS("rf_tuned.rds")
+
+
+new_input <- data.frame(
+  Total_living_area = 4552,
+  Special_features = 2105,
+  Month_Sold = 8,
+  Land_Square_foot = 11247,
+  Highway_distance = 41917.1,
+  Is_new = 20,
+  Rail_distance = 4871.9,
+  Coastal_distance = 4000.8,
+  Age = 42,
+  Centralbusiness_distance = 43897.9,
+  Sub_center_distance = 40115.7
+)
+
+# Predict using the saved model
+tuned_prediction <- predict(rfTuned_model, new_input)
+expm1(tuned_prediction)
+
+# Convert back to actual price
+predicted_price <- expm1(tuned_prediction)
+cat("Predicted Sale Price: £", round(predicted_price, 2), "\n")
+
+```
+
+## compare result of the Tuned model and the actual price
+
+```{r}
+
+# Load required library
+library(ggplot2)
+
+# Create a data frame for plotting
+result <- data.frame(
+  Actual = actual_500,
+  Predicted = tuned_prediction
+)
+
+# Scatter plot with diagonal line
+ggplot(result, aes(x = Actual, y = Predicted)) +
+  geom_point(color = "orange", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "#000", linetype = "dashed") +
+  labs(title = "Random Forest-500: Predicted vs. Actual Prices",
+       x = "Actual Price",
+       y = "Predicted Price") +
+  theme_minimal()
+
+
+
+
+#plotting a line graph to compare the result of actual and predicted 
+################################################
+# Create data frame with index
+result2 <- data.frame(
+  Index = 1:length(test_label),
+  Actual = actual_500,
+  Predicted = rfTuned_prediction
+)
+
+# Melt data for ggplot (so we can plot both lines)
+library(reshape2)
+results_melted <- melt(result2, id.vars = "Index")
+
+ggplot(results_melted, aes(x = Index, y = value, color = variable)) +
+  geom_line(size = 1) +
+  labs(title = "Random forest_tuned: Actual vs. Predicted Prices",
+       x = "Index",
+       y = "Price"
+  ) +
+  scale_color_manual(values = c("Actual" = "black", "Predicted" = "orange")) +
+  theme_minimal()
+
+```
+
+### DEPLOYMENT
+
+```{r}
+
+library(shiny)
+library(shinydashboard)
+library(caret)
+
+rfTuned_model <- readRDS("rf_tuned.rds") #read the model
+
+
+#define the User interface
+ui <- dashboardPage(
+  dashboardHeader(title = "House Price Predictor"),
+  
+  dashboardSidebar(
+    sidebarMenu(
+      menuItem("Predictor", tabName = "predictor", icon = icon("home")))
+  ),
+  
+  dashboardBody(
+    tags$head(
+    tags$style(HTML("
+      }
+        body, .content-wrapper, .right-side {
+        background-color: #f4f4f4 !important;
+      }
+      .btn-primary {
+        background-color: #2C3E50;
+        border-color: #2C3E50;
+        color: white;
+        font-weight: bold;
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+      .output-style {
+        font-size: 22px;
+        font-weight: bold;
+        color: #484848;
+        margin-top: 20px;
+        text-align: center;
+      }
+     .center-btn {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+        align-content: center;
+      }
+      
+    "))
+  ),
+  
+    tabItems(
+      tabItem(tabName = "predictor",
+        fluidRow(
+          box(
+            title = "Input Features",
+            width = 6,
+            status = "primary",
+            solidHeader = TRUE,
+            numericInput("Total_living_area", "Input Total living area", value = 4552),
+            numericInput("Special_features", "Input Special features", value = 2105),
+            numericInput("Month_Sold", "Input Month Sold", value = 8),
+            numericInput("Land_Square_foot", "Input Land Square foot", value = 11247),
+            numericInput("Highway_distance", "Highway distance", value = 41917.1),
+            numericInput("Is_new", "Input a number", value = 20),
+            numericInput("Rail_distance", "Input Rail_distance", value = 4871.9),
+            numericInput("Coastal_distance", "Input Coastal distance", value = 4000.8),
+            numericInput("Age", "Age", value = 42),
+            numericInput("Centralbusiness_distance", "Centralbusiness distance", 
+                         value = 43897.9),
+            numericInput("Sub_center_distance", "Sub center distance", value = 40115.7),
+            
+            div(class = "center-btn",
+              actionButton("predict", "Predict Price", class = "btn-primary"))
+        ),
+        
+        box(
+          title = "predicted price",
+          width = 6,
+          status = "success",
+          solidHeeader = TRUE,
+          div(class = "output-style", textOutput("priceOutput"))
+        )
+       )
+      )
+    )
+  )
+)
+  
+
+# Define Server
+server <- function(input, output) {
+  observeEvent(input$predict, {
+    new_data <- data.frame(
+      Total_living_area = input$Total_living_area,
+      Special_features = input$Special_features,
+      Month_Sold = input$Month_Sold,
+      Land_Square_foot = input$Land_Square_foot,
+      Highway_distance = input$Highway_distance,
+      Is_new = input$Is_new,
+      Rail_distance = input$Rail_distance,
+      Coastal_distance = input$Coastal_distance,
+      Age = input$Age,
+      Centralbusiness_distance = input$Centralbusiness_distance,
+      Sub_center_distance = input$Sub_center_distance
+    )
+    
+    log_prediction <- predict(rfTuned_model, new_data)
+    price_prediction <- expm1(log_prediction)  # reverse log1p if log was used
+
+    output$priceOutput <- renderText({
+      paste("Predicted Price: £", round(price_prediction, 1))
+    })
+  })
+}
+
+# Run the app
+shinyApp(ui = ui, server = server)
+
+```
