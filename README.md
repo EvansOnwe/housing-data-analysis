@@ -18,4 +18,4 @@ This project involves:
 Make sure you have the following installed in R:
 
 ```r
-install.packages(c("tidyverse", "ggplot2", "readr", "dplyr", "ggcorrplot", "caret", "GGally"))
+install.packages(c("tidyverse", "ggplot2", "readr", "dplyr", "corrplot", "caret", "GGally", "randomForest", "xgboost", "Matrix", "Metrics", "shiny", "shinydashboard", "caret"))
